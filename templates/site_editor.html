@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block body_class %}editor-page{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/eclipse.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/show-hint.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="editor-container">
+    <div class="editor-topbar">
+        <div class="topbar-left">
+            <a href="{{ url_for('welcome') }}" class="btn-icon" title="Back to Dashboard">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <h1>{{ site.name }}</h1>
+        </div>
+        <div class="topbar-actions">
+            <button id="undoBtn" class="btn-icon" title="Undo (Ctrl+Z)" disabled>
+                <i class="fas fa-undo"></i>
+            </button>
+            <button id="redoBtn" class="btn-icon" title="Redo (Ctrl+Y)" disabled>
+                <i class="fas fa-redo"></i>
+            </button>
+            <button id="copyLinkBtn" class="btn-primary" onclick="copyPublicLink()">
+                <i class="fas fa-link"></i>
+                Copy Public Link
+            </button>
+            <button id="copyLinkBtn" class="btn-primary" onclick="window.location.href='https://boba.hackclub.com/'">
+                <i class="fa-solid fa-mug-hot"></i>
+                Give Me My Boba!!!
+            </button>
+            <button id="saveBtn" class="btn-primary" onclick="saveSite()">
+                <i class="fas fa-save"></i>
+                Save Changes
+            </button>
+            <button id="gitBtn" class="btn-primary" onclick="handleGitAction()">
+                <i class="fab fa-github"></i>
+                Git
+            </button>
+        </div>
+    </div>
+
+    <div class="editor-main">
+        <div class="editor-pane">
+            <textarea id="editor">{{ site.html_content }}</textarea>
+        </div>
+        <div class="preview-pane">
+            <div class="browser-frame">
+                <div class="browser-header">
+                    <div class="browser-buttons">
+                        <span class="browser-button close"></span>
+                        <span class="browser-button minimize"></span>
+                        <span class="browser-button maximize"></span>
+                    </div>
+                    <div class="browser-address">
+                        <i class="fas fa-lock"></i>
+                        <span class="browser-url">preview.hackclub.com</span>
+                    </div>
+                </div>
+                <iframe id="preview" frameborder="0"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="githubModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fab fa-github"></i> GitHub Integration</h2>
+            <button class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body" id="githubModalBody">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary close-modal">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closetag.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/show-hint.min.js"></script>
+<script src="{{ url_for('static', filename='js/github.js') }}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/html-hint.min.js"></script>
+
+<script>
+const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+    mode: 'htmlmixed',
+    theme: 'eclipse',
+    lineNumbers: true,
+    autoCloseTags: true,
+    autoCloseBrackets: true,
+    matchBrackets: true,
+    indentUnit: 4,
+    tabSize: 4,
+    lineWrapping: true,
+    extraKeys: {
+        'Ctrl-Space': 'autocomplete',
+        'Tab': function(cm) {
+            if (cm.somethingSelected()) {
+                cm.indentSelection('add');
+            } else {
+                cm.replaceSelection('    ', 'end');
+            }
+        }
+    }
+});
+
+const undoBtn = document.getElementById('undoBtn');
+const redoBtn = document.getElementById('redoBtn');
+
+editor.on('change', () => {
+    undoBtn.disabled = !editor.historySize().undo;
+    redoBtn.disabled = !editor.historySize().redo;
+    updatePreview();
+});
+
+undoBtn.addEventListener('click', () => editor.undo());
+redoBtn.addEventListener('click', () => editor.redo());
+
+const preview = document.getElementById('preview');
+let previewTimeout;
+
+function updatePreview() {
+    clearTimeout(previewTimeout);
+    previewTimeout = setTimeout(() => {
+        const content = editor.getValue();
+        preview.srcdoc = content;
+    }, 300);
+}
+
+updatePreview();
+
+async function saveSite() {
+    const saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`/api/sites/{{ site.id }}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                html_content: editor.getValue()
+            })
+        });
+        
+        if (response.ok) {
+            showToast('success', 'Changes saved successfully!');
+        } else {
+            const data = await response.json();
+            showToast('error', data.message || 'Failed to save changes');
+        }
+    } catch (error) {
+        showToast('error', 'An error occurred while saving changes');
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+function copyPublicLink() {
+    const url = `${window.location.origin}/s/{{ site.slug }}`;
+    navigator.clipboard.writeText(url).then(() => {
+        showToast('success', 'Public link copied to clipboard!');
+    }).catch(() => {
+        showToast('error', 'Failed to copy link');
+    });
+}
+
+function showToast(type, message) {
+    const toastContainer = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icon = type === 'success' ? 'check-circle' : 'exclamation-circle';
+    
+    toast.innerHTML = `
+        <div class="toast-content">
+            <i class="fas fa-${icon}"></i>
+            <span>${message}</span>
+        </div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    toast.offsetHeight;
+    
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        saveSite();
+    }
+});
+</script>
+
+<!-- GitHub Modal -->
+<div id="githubModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fab fa-github"></i> GitHub Integration</h2>
+            <button class="close-button" onclick="closeGitHubModal()">&times;</button>
+        </div>
+        <div id="githubModalBody" class="modal-body">
+            <!-- Content will be dynamically inserted here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
