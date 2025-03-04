@@ -49,4 +49,4 @@ Currently using 'iloveboba' as the preview code for new signups.
 
 ## License
 
-This project is part of HackClub and follows HackClub's licensing terms.
+This project is part of Hack Club and follows Hack Club's licensing terms.
